@@ -67,7 +67,7 @@ export default class Island2Scene extends Phaser.Scene {
       fontSize: '17px', fontFamily: 'Georgia, serif', color: '#CC88FF',
     }).setOrigin(0.5).setDepth(10);
 
-    this.instructText = this.add.text(400, 560, 'WASD / arrows to move \u2014 find the Shadow Fox!', {
+    this.instructText = this.add.text(400, 560, 'Tap to move \u2014 find the Shadow Fox!', {
       fontSize: '15px', fontFamily: 'Arial', color: '#CCAAFF',
     }).setOrigin(0.5).setDepth(10);
 

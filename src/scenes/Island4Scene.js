@@ -68,7 +68,7 @@ export default class Island4Scene extends Phaser.Scene {
       fontSize: '17px', fontFamily: 'Georgia, serif', color: '#FF8844',
     }).setOrigin(0.5).setDepth(10);
 
-    this.instructText = this.add.text(400, 560, 'WASD / arrows to move \u2014 find the Fire Lizard!', {
+    this.instructText = this.add.text(400, 560, 'Tap to move \u2014 find the Fire Lizard!', {
       fontSize: '15px', fontFamily: 'Arial', color: '#FFBB88',
     }).setOrigin(0.5).setDepth(10);
 

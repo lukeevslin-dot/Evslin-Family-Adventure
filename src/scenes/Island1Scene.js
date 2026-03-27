@@ -48,7 +48,7 @@ export default class Island1Scene extends Phaser.Scene {
     this.physics.add.overlap(this.player, this.monster, this.triggerBattle, null, this);
 
     // Instruction text
-    this.instructText = this.add.text(400, 560, 'Arrow keys or WASD to move — find the Grumpy Frog!', {
+    this.instructText = this.add.text(400, 560, 'Tap to move — find the Grumpy Frog!', {
       fontSize: '16px', fontFamily: 'Arial', color: '#CCFFCC',
     }).setOrigin(0.5).setDepth(10);
 
@@ -147,8 +147,16 @@ export default class Island1Scene extends Phaser.Scene {
   }
 
   setupControls() {
-    this.cursors = this.input.keyboard.createCursorKeys();
-    this.wasd = this.input.keyboard.addKeys('W,A,S,D');
+    this.cursors    = this.input.keyboard.createCursorKeys();
+    this.wasd       = this.input.keyboard.addKeys('W,A,S,D');
+    this._tapTarget = null;
+
+    this.input.on('pointerdown', (ptr) => {
+      this._tapTarget = { x: ptr.x, y: ptr.y };
+    });
+    this.input.on('pointermove', (ptr) => {
+      if (ptr.isDown) this._tapTarget = { x: ptr.x, y: ptr.y };
+    });
   }
 
   triggerBattle() {
@@ -215,14 +223,24 @@ export default class Island1Scene extends Phaser.Scene {
     const speed = 160;
     let vx = 0, vy = 0;
 
-    if (this.cursors.left.isDown  || this.wasd.A.isDown) vx = -speed;
-    if (this.cursors.right.isDown || this.wasd.D.isDown) vx =  speed;
-    if (this.cursors.up.isDown    || this.wasd.W.isDown) vy = -speed;
-    if (this.cursors.down.isDown  || this.wasd.S.isDown) vy =  speed;
+    if (this.cursors.left.isDown  || this.wasd.A.isDown) { vx = -speed; this._tapTarget = null; }
+    if (this.cursors.right.isDown || this.wasd.D.isDown) { vx =  speed; this._tapTarget = null; }
+    if (this.cursors.up.isDown    || this.wasd.W.isDown) { vy = -speed; this._tapTarget = null; }
+    if (this.cursors.down.isDown  || this.wasd.S.isDown) { vy =  speed; this._tapTarget = null; }
 
-    // Normalize diagonal
+    if (vx === 0 && vy === 0 && this._tapTarget) {
+      const dx   = this._tapTarget.x - this.player.x;
+      const dy   = this._tapTarget.y - this.player.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 12) {
+        vx = (dx / dist) * speed;
+        vy = (dy / dist) * speed;
+      } else {
+        this._tapTarget = null;
+      }
+    }
+
     if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
-
     this.player.setVelocity(vx, vy);
 
     // Depth sort player vs trees

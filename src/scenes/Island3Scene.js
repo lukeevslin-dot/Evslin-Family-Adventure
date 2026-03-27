@@ -68,7 +68,7 @@ export default class Island3Scene extends Phaser.Scene {
       fontSize: '17px', fontFamily: 'Georgia, serif', color: '#AADDFF',
     }).setOrigin(0.5).setDepth(10);
 
-    this.instructText = this.add.text(400, 560, 'WASD / arrows to move \u2014 find the Ice Golem!', {
+    this.instructText = this.add.text(400, 560, 'Tap to move \u2014 find the Ice Golem!', {
       fontSize: '15px', fontFamily: 'Arial', color: '#CCEEFF',
     }).setOrigin(0.5).setDepth(10);
 

@@ -80,25 +80,17 @@ export function createCrystalPickup(scene, x, y) {
 }
 
 export function setupControls(scene) {
-  scene.cursors = scene.input.keyboard.createCursorKeys();
-  scene.wasd   = scene.input.keyboard.addKeys('W,A,S,D');
+  scene.cursors    = scene.input.keyboard.createCursorKeys();
+  scene.wasd       = scene.input.keyboard.addKeys('W,A,S,D');
+  scene._tapTarget = null;
 
-  // Touch drag state
-  scene._touchActive = false;
-  scene._touchTargetX = 0;
-  scene._touchTargetY = 0;
+  // Tap-to-move: tap/drag anywhere → character walks to that point
   scene.input.on('pointerdown', (ptr) => {
-    scene._touchActive  = true;
-    scene._touchTargetX = ptr.x;
-    scene._touchTargetY = ptr.y;
+    scene._tapTarget = { x: ptr.x, y: ptr.y };
   });
   scene.input.on('pointermove', (ptr) => {
-    if (ptr.isDown) {
-      scene._touchTargetX = ptr.x;
-      scene._touchTargetY = ptr.y;
-    }
+    if (ptr.isDown) scene._tapTarget = { x: ptr.x, y: ptr.y };
   });
-  scene.input.on('pointerup', () => { scene._touchActive = false; });
 }
 
 export function handleMovement(scene) {
@@ -106,20 +98,22 @@ export function handleMovement(scene) {
   const speed = 160;
   let vx = 0, vy = 0;
 
-  // Keyboard / WASD
-  if (scene.cursors.left.isDown  || scene.wasd.A.isDown) vx = -speed;
-  if (scene.cursors.right.isDown || scene.wasd.D.isDown) vx =  speed;
-  if (scene.cursors.up.isDown    || scene.wasd.W.isDown) vy = -speed;
-  if (scene.cursors.down.isDown  || scene.wasd.S.isDown) vy =  speed;
+  // Keyboard / WASD — clears tap target so keys take full control
+  if (scene.cursors.left.isDown  || scene.wasd.A.isDown) { vx = -speed; scene._tapTarget = null; }
+  if (scene.cursors.right.isDown || scene.wasd.D.isDown) { vx =  speed; scene._tapTarget = null; }
+  if (scene.cursors.up.isDown    || scene.wasd.W.isDown) { vy = -speed; scene._tapTarget = null; }
+  if (scene.cursors.down.isDown  || scene.wasd.S.isDown) { vy =  speed; scene._tapTarget = null; }
 
-  // Touch drag — only when no key is held
-  if (vx === 0 && vy === 0 && scene._touchActive) {
-    const dx   = scene._touchTargetX - scene.player.x;
-    const dy   = scene._touchTargetY - scene.player.y;
+  // Tap-to-move — persists until character arrives
+  if (vx === 0 && vy === 0 && scene._tapTarget) {
+    const dx   = scene._tapTarget.x - scene.player.x;
+    const dy   = scene._tapTarget.y - scene.player.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist > 18) {
+    if (dist > 12) {
       vx = (dx / dist) * speed;
       vy = (dy / dist) * speed;
+    } else {
+      scene._tapTarget = null; // arrived
     }
   }
 
