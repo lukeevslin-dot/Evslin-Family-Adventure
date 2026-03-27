@@ -109,11 +109,43 @@ export const PAD_TONES = [523.25, 659.25, 784.00, 880.00];
 // ── AudioManager class ───────────────────────────────────────────────────────
 class AudioManager {
   constructor() {
-    this._ac      = null;   // AudioContext
-    this._out     = null;   // master GainNode
-    this._loops   = {};     // { id: timeoutId }
-    this._theme   = null;   // currently playing theme name
-    this._pending = null;   // theme queued while context is suspended
+    this._ac       = null;   // AudioContext
+    this._out      = null;   // master GainNode
+    this._loops    = {};     // { id: timeoutId }
+    this._theme    = null;   // currently playing theme name
+    this._pending  = null;   // theme queued while context is suspended
+    this._unlocked = false;  // iOS audio unlock flag
+
+    // iOS requires audio to be unlocked on ANY user gesture, not just the play button.
+    // Register once on the earliest possible touch/click.
+    const unlock = () => this._unlock();
+    ['touchstart', 'touchend', 'click'].forEach(e =>
+      window.addEventListener(e, unlock, { once: true, passive: true }),
+    );
+  }
+
+  // iOS audio unlock: create context + play a silent buffer to satisfy Safari
+  _unlock() {
+    if (this._unlocked) return;
+    this._unlocked = true;
+    this._init();
+    if (!this._ac) return;
+
+    // Silent 1-sample buffer — satisfies iOS WebKit's "user gesture" requirement
+    const buf = this._ac.createBuffer(1, 1, 22050);
+    const src = this._ac.createBufferSource();
+    src.buffer = buf;
+    src.connect(this._ac.destination);
+    src.start(0);
+
+    if (this._ac.state === 'suspended') {
+      this._ac.resume().then(() => {
+        if (this._pending) {
+          this._startLoops(this._pending);
+          this._pending = null;
+        }
+      }).catch(() => {});
+    }
   }
 
   // Lazy-init AudioContext
@@ -125,7 +157,7 @@ class AudioManager {
       this._out.gain.value = 0.55;
       this._out.connect(this._ac.destination);
 
-      // When context resumes (first user gesture), start any queued theme
+      // Fallback statechange listener (desktop browsers)
       this._ac.addEventListener('statechange', () => {
         if (this._ac.state === 'running' && this._pending) {
           this._startLoops(this._pending);
@@ -139,8 +171,16 @@ class AudioManager {
 
   // Explicit resume — call on first user interaction if needed
   resume() {
+    this._unlock();
     this._init();
-    if (this._ac && this._ac.state === 'suspended') this._ac.resume();
+    if (this._ac && this._ac.state === 'suspended') {
+      this._ac.resume().then(() => {
+        if (this._pending) {
+          this._startLoops(this._pending);
+          this._pending = null;
+        }
+      }).catch(() => {});
+    }
   }
 
   // Schedule a single note at Web Audio time t

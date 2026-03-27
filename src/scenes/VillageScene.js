@@ -120,7 +120,7 @@ export default class VillageScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(20).setAlpha(0);
 
     // Intro message
-    const intro = this.add.text(400, 300, '✨ You have crystal magic!\nWalk to plots and press SPACE.', {
+    const intro = this.add.text(400, 300, '✨ You have crystal magic!\nWalk up to plots to use it!', {
       fontSize: '22px', fontFamily: 'Georgia, serif', color: '#FFFFFF',
       stroke: '#0044AA', strokeThickness: 5, align: 'center',
       backgroundColor: '#00000088', padding: { x: 16, y: 10 },
@@ -130,9 +130,20 @@ export default class VillageScene extends Phaser.Scene {
     });
 
     // ── Controls ──────────────────────────────────────────────────────────────
-    this.cursors  = this.input.keyboard.createCursorKeys();
-    this.wasd     = this.input.keyboard.addKeys('W,A,S,D');
-    this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    this.cursors   = this.input.keyboard.createCursorKeys();
+    this.wasd      = this.input.keyboard.addKeys('W,A,S,D');
+    this.spaceKey  = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+    this._tapTarget = null;
+
+    // Tap-to-move
+    this.input.on('pointerdown', (ptr) => { this._tapTarget = { x: ptr.x, y: ptr.y }; });
+    this.input.on('pointermove', (ptr) => { if (ptr.isDown) this._tapTarget = { x: ptr.x, y: ptr.y }; });
+
+    // Tapping a task sprite directly also triggers it
+    this.taskObjects.forEach(task => {
+      task.sprite.setInteractive({ useHandCursor: true });
+      task.sprite.on('pointerdown', () => this.doTask(task));
+    });
 
     audioManager.playTheme('village');
     this.cameras.main.fadeIn(800);
@@ -205,12 +216,27 @@ export default class VillageScene extends Phaser.Scene {
 
     const speed = 160;
     let vx = 0, vy = 0;
-    if (this.cursors.left.isDown  || this.wasd.A.isDown) vx = -speed;
-    if (this.cursors.right.isDown || this.wasd.D.isDown) vx =  speed;
-    if (this.cursors.up.isDown    || this.wasd.W.isDown) vy = -speed;
-    if (this.cursors.down.isDown  || this.wasd.S.isDown) vy =  speed;
-    if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
 
+    // Keyboard
+    if (this.cursors.left.isDown  || this.wasd.A.isDown) { vx = -speed; this._tapTarget = null; }
+    if (this.cursors.right.isDown || this.wasd.D.isDown) { vx =  speed; this._tapTarget = null; }
+    if (this.cursors.up.isDown    || this.wasd.W.isDown) { vy = -speed; this._tapTarget = null; }
+    if (this.cursors.down.isDown  || this.wasd.S.isDown) { vy =  speed; this._tapTarget = null; }
+
+    // Tap-to-move
+    if (vx === 0 && vy === 0 && this._tapTarget) {
+      const dx   = this._tapTarget.x - this.player.x;
+      const dy   = this._tapTarget.y - this.player.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 12) {
+        vx = (dx / dist) * speed;
+        vy = (dy / dist) * speed;
+      } else {
+        this._tapTarget = null;
+      }
+    }
+
+    if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
     this.player.setVelocity(vx, vy);
     this.player.setDepth(2 + this.player.y / 1000);
 
@@ -220,28 +246,41 @@ export default class VillageScene extends Phaser.Scene {
 
     // ── Proximity checks ──────────────────────────────────────────────────────
     if (!this.interacting) {
-      // Check task zones
+      // Check task zones — auto-trigger on proximity (works for touch & keyboard)
       if (!this.allDone) {
         let nearTask = null;
         for (const task of this.taskObjects) {
           if (task.done) continue;
           const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, task.x, task.y);
-          if (dist < 65) { nearTask = task; break; }
+          if (dist < 55) { nearTask = task; break; }
         }
         if (nearTask) {
-          this.interactPrompt.setText(`SPACE — Use magic: ${nearTask.label}`).setAlpha(1);
-          if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) this.doTask(nearTask);
+          this.interactPrompt.setText(`✨ Using magic: ${nearTask.label}`).setAlpha(1);
+          // Auto-trigger when close enough (touch) or SPACE (keyboard)
+          if (!nearTask._triggering) {
+            nearTask._triggering = true;
+            this._tapTarget = null;
+            this.time.delayedCall(400, () => {
+              if (!nearTask.done) this.doTask(nearTask);
+            });
+          }
           return;
         }
       }
 
-      // Check dock
+      // Check dock — auto-trigger on proximity
       if (this.dockReady) {
         const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.dockX, this.dockY);
         if (dist < 75) {
-          this.interactPrompt.setText('SPACE — Board the waʻa canoes!').setAlpha(1);
-          if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) this.launchCanoes();
+          this.interactPrompt.setText('🛶  Walk to the waʻa to set sail!').setAlpha(1);
+          if (!this._dockTriggering) {
+            this._dockTriggering = true;
+            this._tapTarget = null;
+            this.time.delayedCall(500, () => this.launchCanoes());
+          }
           return;
+        } else {
+          this._dockTriggering = false;
         }
       }
     }
