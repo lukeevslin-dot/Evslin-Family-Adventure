@@ -11,9 +11,7 @@ const C4=261.63, D4=293.66, E4=329.63, G4=392.00, A4=440.00;
 const C5=523.25, A5=880.00;
 
 // ── Theme definitions ────────────────────────────────────────────────────────
-// Each entry: [frequency_Hz, duration_sec]  (freq = 0 → rest)
 const THEMES = {
-  // Gentle, floating — "the horizon calls"
   title: {
     melody: [
       [E4,.50],[G4,.38],[A4,.65],
@@ -34,7 +32,6 @@ const THEMES = {
     vol: 0.18, bvol: 0.11,
   },
 
-  // Lively, rhythmic — paddling between islands
   island: {
     melody: [
       [C4,.22],[E4,.22],[G4,.22],[A4,.38],
@@ -56,7 +53,6 @@ const THEMES = {
     vol: 0.19, bvol: 0.13,
   },
 
-  // Tense, minor-leaning — puzzle/battle encounters
   battle: {
     melody: [
       [A4,.20],[G4,.20],[E4,.35],[0,.12],
@@ -79,7 +75,6 @@ const THEMES = {
     vol: 0.20, bvol: 0.13,
   },
 
-  // Warm, celebratory — village & ending
   village: {
     melody: [
       [C4,.22],[E4,.22],[G4,.22],[A4,.32],
@@ -102,88 +97,76 @@ const THEMES = {
   },
 };
 
-// ── Simon Says pad tones — pentatonic, bright and distinct ──────────────────
-// Red=C5  Blue=E5  Green=G5  Yellow=A5
+// ── Simon Says pad tones ─────────────────────────────────────────────────────
 export const PAD_TONES = [523.25, 659.25, 784.00, 880.00];
 
-// ── AudioManager class ───────────────────────────────────────────────────────
+// ── AudioManager ─────────────────────────────────────────────────────────────
 class AudioManager {
   constructor() {
-    this._ac       = null;   // AudioContext
-    this._out      = null;   // master GainNode
-    this._loops    = {};     // { id: timeoutId }
-    this._theme    = null;   // currently playing theme name
-    this._pending  = null;   // theme queued while context is suspended
-    this._unlocked = false;  // iOS audio unlock flag
+    this._ac      = null;   // AudioContext — created on first gesture
+    this._out     = null;   // master GainNode
+    this._loops   = {};
+    this._theme   = null;
+    this._pending = null;   // theme to start once context is running
 
-    // iOS requires audio to be unlocked on ANY user gesture, not just the play button.
-    // Register once on the earliest possible touch/click.
-    const unlock = () => this._unlock();
-    ['touchstart', 'touchend', 'click'].forEach(e =>
-      window.addEventListener(e, unlock, { once: true, passive: true }),
-    );
+    // iOS Safari requires AudioContext to be created AND resumed inside a
+    // synchronous user-gesture handler (touchstart / click on window).
+    // Phaser's pointerdown fires inside requestAnimationFrame — too late for iOS.
+    // Register on window directly, without 'once', so re-suspension is handled.
+    const onGesture = () => {
+      // Create context inside gesture if not yet done
+      if (!this._ac) {
+        try {
+          this._ac  = new (window.AudioContext || window.webkitAudioContext)();
+          this._out = this._ac.createGain();
+          this._out.gain.value = 0.55;
+          this._out.connect(this._ac.destination);
+
+          // statechange fires on some browsers when context resumes
+          this._ac.addEventListener('statechange', () => {
+            if (this._ac.state === 'running') this._flushPending();
+          });
+        } catch (e) {
+          return;
+        }
+      }
+
+      // Play a silent 1-sample buffer — mandatory iOS WebKit unlock trick
+      try {
+        const buf = this._ac.createBuffer(1, 1, 22050);
+        const src = this._ac.createBufferSource();
+        src.buffer = buf;
+        src.connect(this._ac.destination);
+        src.start(0);
+      } catch (e) {}
+
+      // Resume and flush any pending theme
+      if (this._ac.state === 'suspended') {
+        this._ac.resume().then(() => this._flushPending()).catch(() => {});
+      } else if (this._ac.state === 'running') {
+        this._flushPending();
+      }
+    };
+
+    window.addEventListener('touchstart', onGesture, { passive: true });
+    window.addEventListener('click',      onGesture, { passive: true });
   }
 
-  // iOS audio unlock: create context + play a silent buffer to satisfy Safari
-  _unlock() {
-    if (this._unlocked) return;
-    this._unlocked = true;
-    this._init();
-    if (!this._ac) return;
-
-    // Silent 1-sample buffer — satisfies iOS WebKit's "user gesture" requirement
-    const buf = this._ac.createBuffer(1, 1, 22050);
-    const src = this._ac.createBufferSource();
-    src.buffer = buf;
-    src.connect(this._ac.destination);
-    src.start(0);
-
-    if (this._ac.state === 'suspended') {
-      this._ac.resume().then(() => {
-        if (this._pending) {
-          this._startLoops(this._pending);
-          this._pending = null;
-        }
-      }).catch(() => {});
+  // Start pending theme if one is waiting
+  _flushPending() {
+    if (this._pending && this._ac?.state === 'running') {
+      this._startLoops(this._pending);
+      this._pending = null;
     }
   }
 
-  // Lazy-init AudioContext
-  _init() {
-    if (this._ac) return;
-    try {
-      this._ac  = new (window.AudioContext || window.webkitAudioContext)();
-      this._out = this._ac.createGain();
-      this._out.gain.value = 0.55;
-      this._out.connect(this._ac.destination);
-
-      // Fallback statechange listener (desktop browsers)
-      this._ac.addEventListener('statechange', () => {
-        if (this._ac.state === 'running' && this._pending) {
-          this._startLoops(this._pending);
-          this._pending = null;
-        }
-      });
-    } catch (e) {
-      console.warn('Web Audio not available:', e);
-    }
-  }
-
-  // Explicit resume — call on first user interaction if needed
+  // Called from TitleScene PLAY button — also a valid gesture context
   resume() {
-    this._unlock();
-    this._init();
     if (this._ac && this._ac.state === 'suspended') {
-      this._ac.resume().then(() => {
-        if (this._pending) {
-          this._startLoops(this._pending);
-          this._pending = null;
-        }
-      }).catch(() => {});
+      this._ac.resume().then(() => this._flushPending()).catch(() => {});
     }
   }
 
-  // Schedule a single note at Web Audio time t
   _note(freq, t, dur, vol, wave = 'triangle') {
     if (!this._ac || freq <= 0) return;
     const osc = this._ac.createOscillator();
@@ -199,18 +182,16 @@ class AudioManager {
     osc.stop(t + dur + 0.05);
   }
 
-  // Schedule one full pass of a note sequence, then self-reschedule
   _scheduleSeq(id, notes, vol, wave, t0) {
     let t = t0;
     for (const [f, d] of notes) {
       this._note(f, t, d, vol, wave);
       t += d;
     }
-    const len = notes.reduce((s, [, d]) => s + d, 0);
-    // Reschedule ~1.5 s before the loop ends to avoid gaps
+    const len   = notes.reduce((s, [, d]) => s + d, 0);
     const delay = Math.max(50, (t0 + len - this._ac.currentTime - 1.5) * 1000);
     this._loops[id] = setTimeout(() => {
-      if (id in this._loops) {  // still active
+      if (id in this._loops) {
         delete this._loops[id];
         this._scheduleSeq(id, notes, vol, wave, t0 + len);
       }
@@ -228,40 +209,45 @@ class AudioManager {
 
   _stopLoops() {
     for (const id in this._loops) clearTimeout(this._loops[id]);
-    this._loops  = {};
-    this._theme  = null;
+    this._loops   = {};
+    this._theme   = null;
     this._pending = null;
   }
 
-  // Public: switch to a theme (no-op if already playing)
   playTheme(name) {
     if (this._theme === name) return;
-    this._init();
-    if (!this._ac) return;
     this._stopLoops();
+
+    if (!this._ac) {
+      // Context not created yet (no gesture) — queue it
+      this._pending = name;
+      return;
+    }
 
     if (this._ac.state === 'running') {
       this._startLoops(name);
     } else {
+      // Suspended — store as pending; gesture handler will start it
       this._pending = name;
-      this._ac.resume(); // triggers statechange → _startLoops
     }
   }
 
   stopMusic() { this._stopLoops(); }
 
-  // ── Simon Says pad sound ───────────────────────────────────────────────────
   playPadTone(index) {
-    this._init();
     if (!this._ac) return;
-    if (this._ac.state === 'suspended') this._ac.resume();
+    if (this._ac.state === 'suspended') {
+      this._ac.resume().then(() => this._playPadNow(index)).catch(() => {});
+    } else {
+      this._playPadNow(index);
+    }
+  }
 
+  _playPadNow(index) {
     const freq = PAD_TONES[index] ?? 440;
     const t    = this._ac.currentTime + 0.01;
-    // Fundamental
-    this._note(freq,      t, 0.55, 0.40, 'sine');
-    // Soft octave overtone for warmth
-    this._note(freq * 2,  t, 0.22, 0.12, 'sine');
+    this._note(freq,     t, 0.55, 0.40, 'sine');
+    this._note(freq * 2, t, 0.22, 0.12, 'sine');
   }
 }
 
