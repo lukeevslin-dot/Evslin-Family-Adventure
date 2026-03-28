@@ -36,16 +36,16 @@ export default class VillageScene extends Phaser.Scene {
   constructor() { super({ key: 'VillageScene' }); }
 
   create() {
-    this.plots           = [];
-    this.builtCount      = 0;
-    this.dockReady       = false;
-    this.interacting     = false;
-    this.transitioning   = false;
-    this._tapTarget      = null;
-    this._nearPlot       = null;
-    this._menuOpen       = false;
-    this._menuElements   = [];
-    this._dockTriggering = false;
+    this.plots             = [];
+    this.builtCount        = 0;
+    this.interacting       = false;
+    this.transitioning     = false;
+    this._tapTarget        = null;
+    this._nearPlot         = null;
+    this._menuOpen         = false;
+    this._menuJustOpened   = false;  // prevents tap-through when opening menu
+    this._menuElements     = [];
+    this._partyStarted     = false;
 
     if (this.scene.isActive('HUDScene')) this.scene.stop('HUDScene');
 
@@ -151,7 +151,7 @@ export default class VillageScene extends Phaser.Scene {
       fontSize: '15px', fontFamily: 'Georgia, serif',
       color: '#FFEEBB', stroke: '#333300', strokeThickness: 2,
     }).setOrigin(0.5).setDepth(10);
-    this.dockHintWorld = this.add.text(this.dockX + 90, this.dockY - 70, '(build all 6 first)', {
+    this.add.text(this.dockX + 90, this.dockY - 70, 'Build all plots first!', {
       fontSize: '12px', fontFamily: 'Arial', color: '#CCCCAA', stroke: '#222200', strokeThickness: 2,
     }).setOrigin(0.5).setDepth(10);
   }
@@ -275,9 +275,10 @@ export default class VillageScene extends Phaser.Scene {
 
   openMenu(plot) {
     if (this._menuOpen || plot.done || this.interacting) return;
-    this._menuOpen  = true;
-    this._nearPlot  = plot;
-    this._tapTarget = null;
+    this._menuOpen       = true;
+    this._menuJustOpened = true;   // block the simultaneous scene pointerdown from firing into the menu
+    this._nearPlot       = plot;
+    this._tapTarget      = null;
     this.player.setVelocity(0, 0);
     this._menuElements.forEach(el => el.setVisible(true));
   }
@@ -312,6 +313,10 @@ export default class VillageScene extends Phaser.Scene {
 
   // Handle menu taps using screen coordinates (ptr.x / ptr.y)
   _handleMenuTap(sx, sy) {
+    // The same pointer event that opened the menu (from a plot sprite tap) must be ignored,
+    // otherwise it would instantly select a building at the same screen coords.
+    if (this._menuJustOpened) { this._menuJustOpened = false; return; }
+
     // Check cancel
     if (Math.abs(sx - MENU_CX) < 80 && Math.abs(sy - this._menuCancelY) < 18) {
       this.closeMenu();
@@ -363,20 +368,120 @@ export default class VillageScene extends Phaser.Scene {
   }
 
   onAllDone() {
-    this.dockReady = true;
-    this.dockHintWorld.setText('→ board the canoe now!').setColor('#FFD700');
-    this.cameras.main.flash(500, 255, 220, 80);
-    this.progressText.setText('✨ Village complete! Walk to the Waʻa Dock →').setColor('#FFD700');
+    if (this._partyStarted) return;
+    this._partyStarted = true;
 
+    this._tapTarget = null;
+    this.player.setVelocity(0, 0);
+    this.progressText.setText('🎉 Village complete!').setColor('#FFD700');
+    this.cameras.main.flash(700, 255, 220, 80);
+
+    // Short fanfare delay, then party
+    this.time.delayedCall(500, () => this._startDanceParty());
+    this.time.delayedCall(7000, () => this._showWinScreen());
+  }
+
+  _startDanceParty() {
+    audioManager.stopMusic();
+
+    // Gather everyone on the village green
+    const gatherSpots = [
+      { x: 940, y: 490 }, { x: 1000, y: 520 }, { x: 1060, y: 490 },
+      { x: 1120, y: 520 }, { x: 1180, y: 490 }, { x: 1080, y: 440 },
+    ];
+
+    // Villagers dance-bounce toward gather spots
     this.villagers.forEach((v, i) => {
       this.tweens.killTweensOf(v.sprite);
-      this.time.delayedCall(i * 280, () => {
-        this.tweens.add({
-          targets: v.sprite,
-          x: 2160 + (i % 2) * 26, y: 750 + Math.floor(i / 2) * 28,
-          duration: 2000, ease: 'Quad.easeInOut',
-        });
+      const spot = gatherSpots[i] ?? gatherSpots[0];
+      this.tweens.add({
+        targets: v.sprite, x: spot.x, y: spot.y,
+        duration: 1200, ease: 'Quad.easeInOut',
+        onComplete: () => {
+          this.tweens.add({
+            targets: v.sprite, y: spot.y - 28,
+            duration: 280 + i * 40, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+          });
+        },
       });
+    });
+
+    // Player bounces in place
+    this.tweens.killTweensOf(this.player);
+    this.tweens.add({
+      targets: this.player, y: this.player.y - 30,
+      duration: 260, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+    });
+
+    // Colorful sparkle bursts all over the village
+    const burstTimer = this.time.addEvent({
+      delay: 180, repeat: 38,
+      callback: () => {
+        for (let k = 0; k < 6; k++) {
+          const sx = Phaser.Math.Between(700, 1450);
+          const sy = Phaser.Math.Between(350, 800);
+          const sp = this.add.image(sx, sy, 'sparkle')
+            .setDepth(15).setScale(Phaser.Math.FloatBetween(0.9, 2.0))
+            .setTint(Phaser.Math.RND.pick([0xFF88FF, 0xFFFF44, 0x44FFFF, 0xFF8844, 0x88FF88]));
+          this.tweens.add({ targets: sp, alpha: 0, y: sy - 55, scaleX: 0.2, scaleY: 0.2,
+            duration: 650, onComplete: () => sp.destroy() });
+        }
+      },
+    });
+
+    // Big "Dance Party!" text floating in world space
+    const pt = this.add.text(1060, 330, '🎉 Dance Party! 🎉', {
+      fontSize: '48px', fontFamily: 'Georgia, serif',
+      color: '#FFD700', stroke: '#7700AA', strokeThickness: 7,
+    }).setOrigin(0.5).setDepth(30);
+    this.tweens.add({ targets: pt, y: 310, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+  }
+
+  _showWinScreen() {
+    const charKey = this.registry.get('selectedCharacter') || 'luke';
+    const names   = { levi: 'Levi', finley: 'Finley', luke: 'Luke', sokchea: 'Sokchea' };
+
+    // Dark overlay (screen-fixed)
+    this.add.rectangle(400, 300, 800, 600, 0x000022, 0.82)
+      .setScrollFactor(0).setDepth(60);
+
+    this.add.text(400, 135, '🌺  Mahalo!  🌺', {
+      fontSize: '50px', fontFamily: 'Georgia, serif', color: '#FFD700',
+      stroke: '#440044', strokeThickness: 6,
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(61);
+
+    this.add.text(400, 218, `Well done, ${names[charKey]}!`, {
+      fontSize: '30px', fontFamily: 'Georgia, serif', color: '#FFFFFF',
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(61);
+
+    this.add.text(400, 270, 'Your ʻohana is home.', {
+      fontSize: '22px', fontFamily: 'Georgia, serif', color: '#CCFFCC',
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(61);
+
+    this.add.text(400, 312, 'The village is restored!\nThe crystals glow with aloha. 🌊', {
+      fontSize: '19px', fontFamily: 'Georgia, serif', color: '#AADDFF', align: 'center',
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(61);
+
+    // Bouncing star decorations
+    [80, 185, 615, 720].forEach((x, i) => {
+      const star = this.add.text(x, 300, '⭐', { fontSize: '28px' })
+        .setOrigin(0.5).setScrollFactor(0).setDepth(61);
+      this.tweens.add({ targets: star, y: 270, duration: 400 + i * 80, yoyo: true, repeat: -1 });
+    });
+
+    const btn = this.add.text(400, 435, '🎮  Play Again', {
+      fontSize: '24px', fontFamily: 'Arial', color: '#000000',
+      backgroundColor: '#FFD700', padding: { x: 28, y: 14 },
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(62).setInteractive({ useHandCursor: true });
+
+    btn.on('pointerover',  () => btn.setBackgroundColor('#FFFFFF'));
+    btn.on('pointerout',   () => btn.setBackgroundColor('#FFD700'));
+    btn.on('pointerdown',  () => {
+      this.registry.set('crystals', []);
+      this.registry.set('selectedCharacter', null);
+      audioManager.stopMusic();
+      this.scene.stop('HUDScene');
+      this.scene.start('TitleScene');
     });
   }
 
@@ -416,7 +521,7 @@ export default class VillageScene extends Phaser.Scene {
     if (this._menuOpen) return;
 
     // Plot proximity — open menu on SPACE or proximity auto-prompt
-    if (!this.interacting) {
+    if (!this.interacting && !this._partyStarted) {
       let nearest = null, nearestDist = Infinity;
       for (const plot of this.plots) {
         if (plot.done) continue;
@@ -428,35 +533,9 @@ export default class VillageScene extends Phaser.Scene {
         if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) this.openMenu(nearest);
         return;
       }
-
-      // Dock
-      if (this.dockReady) {
-        const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.dockX, this.dockY);
-        if (d < 100) {
-          this.interactPrompt.setText('🛶  Walk to the Waʻa to set sail!').setAlpha(1);
-          if (!this._dockTriggering) {
-            this._dockTriggering = true;
-            this._tapTarget = null;
-            this.time.delayedCall(600, () => this.launchCanoes());
-          }
-          return;
-        } else {
-          this._dockTriggering = false;
-        }
-      }
     }
 
     this.interactPrompt.setAlpha(0);
   }
 
-  launchCanoes() {
-    if (this.transitioning) return;
-    this.transitioning = true;
-    this.player.setVelocity(0, 0);
-    this.cameras.main.flash(400, 255, 220, 80);
-    this.time.delayedCall(400, () => {
-      this.cameras.main.fade(700, 0, 0, 0);
-      this.time.delayedCall(700, () => this.scene.start('VillageEndScene'));
-    });
-  }
 }
