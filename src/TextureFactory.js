@@ -48,6 +48,9 @@ export function make(scene) {
   createGardenPlot(scene);
   createGardenGrown(scene);
   createVillagerNPC(scene);
+  createFishingBuilt(scene);
+  createImuBuilt(scene);
+  createHeiauBuilt(scene);
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────
@@ -913,5 +916,73 @@ function createVillagerNPC(scene) {
     // Aloha shirt flower pattern
     g.fillStyle(0xFFCC00); g.fillCircle(11, 20, 2); g.fillCircle(17, 24, 2);
     g.fillStyle(0xFF44AA); g.fillCircle(14, 23, 2);
+  });
+}
+
+function createFishingBuilt(scene) {
+  tex(scene, 'fishing_built', 64, 52, (g) => {
+    // Water underneath
+    g.fillStyle(0x1A6B9A); g.fillRect(0, 30, 64, 22);
+    g.fillStyle(0x2280BB, 0.6); g.fillRect(4, 36, 56, 8);
+    // Dock planks
+    g.fillStyle(0x7B4A22);
+    for (let y = 18; y <= 30; y += 7) g.fillRect(4, y, 56, 5);
+    // Support posts
+    g.fillStyle(0x4A2808);
+    [10, 32, 54].forEach(x => g.fillRect(x, 18, 5, 30));
+    // Railing
+    g.fillStyle(0x9B6A3A);
+    g.fillRect(4, 14, 56, 4);
+    [8, 28, 48].forEach(x => g.fillRect(x, 6, 4, 12));
+    // Fishing pole
+    g.fillStyle(0x5A3010); g.fillRect(44, 2, 3, 18);
+    g.fillStyle(0xCCCCCC); g.fillRect(46, 20, 1, 22); // fishing line
+    g.fillStyle(0xFF4444); g.fillCircle(47, 44, 2); // bobber
+  });
+}
+
+function createImuBuilt(scene) {
+  tex(scene, 'imu_built', 60, 52, (g) => {
+    // Dirt pit shadow
+    g.fillStyle(0x3A2010); g.fillEllipse(30, 36, 52, 28);
+    // Stone ring
+    g.fillStyle(0x777777);
+    for (let a = 0; a < Math.PI * 2; a += 0.55) {
+      g.fillRect(
+        30 + Math.cos(a) * 20 - 5,
+        32 + Math.sin(a) * 11 - 5,
+        10, 10,
+      );
+    }
+    // Hot coals center
+    g.fillStyle(0xFF6600); g.fillEllipse(30, 32, 28, 16);
+    g.fillStyle(0xFF3300); g.fillEllipse(28, 31, 18, 10);
+    g.fillStyle(0xFFAA00); g.fillEllipse(30, 30, 10, 6);
+    g.fillStyle(0xFFFFAA, 0.7); g.fillEllipse(30, 29, 5, 4);
+    // Steam wisps
+    g.fillStyle(0xDDDDDD, 0.45);
+    g.fillEllipse(22, 12, 6, 14); g.fillEllipse(30, 8, 6, 16); g.fillEllipse(40, 14, 6, 12);
+  });
+}
+
+function createHeiauBuilt(scene) {
+  tex(scene, 'heiau_built', 68, 56, (g) => {
+    // Base platform (largest, darkest)
+    g.fillStyle(0x5A5040); g.fillRect(2, 38, 64, 16);
+    g.fillStyle(0x6A6050); g.fillRect(4, 36, 60, 4);
+    // Middle tier
+    g.fillStyle(0x6A6050); g.fillRect(10, 24, 48, 14);
+    g.fillStyle(0x7A7060); g.fillRect(12, 22, 44, 4);
+    // Top platform
+    g.fillStyle(0x7A7060); g.fillRect(18, 14, 32, 10);
+    g.fillStyle(0x8A8070); g.fillRect(20, 12, 28, 4);
+    // Altar stones on top
+    g.fillStyle(0x9A9080); g.fillRect(24, 6, 8, 8); g.fillRect(36, 6, 8, 8);
+    // Lava rock accents on base
+    g.fillStyle(0x4A4030);
+    [6,16,26,36,46,56].forEach(x => g.fillRect(x, 40, 6, 10));
+    // Ti leaves (offerings)
+    g.fillStyle(0x2A6A18); g.fillTriangle(28, 12, 24, 2, 32, 2);
+    g.fillStyle(0x3A8A28); g.fillTriangle(40, 12, 36, 3, 44, 4);
   });
 }
